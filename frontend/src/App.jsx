@@ -1,7 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router'
 import LoginPage from './pages/LoginPage'
 import MainDashboard from './pages/MainDashboard'
-import TeamDashboard from './pages/TeamDashboard'
+import MemberDashboard from './pages/MemberDashboard'
 import IndividualDashboard from './pages/IndividualDashboard'
 import TeamMembersPage from './pages/TeamMembersPage'
 import { useAuth } from './context/authContext'
@@ -52,13 +52,14 @@ function AppRoutes() {
         }
       />
       <Route
-        path='/dashboard/team'
+        path='/dashboard/member'
         element={
           <AuthGate requiresAuth>
-            <TeamDashboard />
+            <MemberDashboard />
           </AuthGate>
         }
       />
+      <Route path='/dashboard/team' element={<Navigate to='/dashboard/member' replace />} />
       <Route
         path='/dashboard/team/:teamId'
         element={

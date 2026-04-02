@@ -46,7 +46,7 @@ function getDefaultOwnerId(teamMembers, currentOwnerId) {
   return teamMembers[0]?.id ? String(teamMembers[0].id) : ''
 }
 
-function TeamDashboard() {
+function MemberDashboard() {
   const navigate = useNavigate()
   const { currentUser, isLeader, logout } = useAuth()
   const [team, setTeam] = useState(null)
@@ -253,9 +253,9 @@ function TeamDashboard() {
         <div className='flex flex-col gap-4 md:flex-row md:items-start md:justify-between'>
           <div>
             <p className='text-sm font-semibold uppercase tracking-[0.2em] text-emerald-600'>
-              Team View
+              Member View
             </p>
-            <h1 className='mt-3 text-4xl font-bold'>Team Dashboard</h1>
+            <h1 className='mt-3 text-4xl font-bold'>Member Dashboard</h1>
             <p className='mt-3 max-w-2xl text-sm text-slate-600'>
               Review your current team, its members, and the achievements awarded
               inside that team.
@@ -515,4 +515,4 @@ function TeamDashboard() {
   )
 }
 
-export default TeamDashboard
+export default MemberDashboard

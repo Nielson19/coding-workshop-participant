@@ -358,9 +358,9 @@ function TeamMembersPage() {
           </Link>
           <Link
             className='rounded-xl border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-400'
-            to='/dashboard/team'
+            to='/dashboard/member'
           >
-            Team Dashboard
+            Member Dashboard
           </Link>
         </div>
       </section>

@@ -37,6 +37,26 @@ export async function getTeamById(teamId) {
   return data.item || data.items?.[0] || null
 }
 
+export async function createTeam({ name, description, region, leaderId, memberIds }) {
+  const response = await fetch(getServiceUrl('teams'), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify({
+      name,
+      description,
+      region,
+      leaderId,
+      memberIds,
+    }),
+  })
+
+  const data = await parseResponse(response)
+  return data.team || null
+}
+
 export async function addIndividualToTeam(teamId, individualId) {
   const response = await fetch(getServiceUrl('teams'), {
     method: 'PUT',

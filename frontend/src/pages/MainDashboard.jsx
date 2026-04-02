@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { useAuth } from '../context/authContext'
-import { getTeams } from '../services/teamService'
+import { createTeam, getTeams } from '../services/teamService'
 
 const leaderSummary = {
   teamName: 'NA Alpha Team',
@@ -17,6 +17,14 @@ function MainDashboard() {
   const [teams, setTeams] = useState([])
   const [teamsLoading, setTeamsLoading] = useState(true)
   const [teamsError, setTeamsError] = useState('')
+  const [showCreateTeamForm, setShowCreateTeamForm] = useState(false)
+  const [createTeamValues, setCreateTeamValues] = useState({
+    name: '',
+    description: '',
+  })
+  const [createTeamError, setCreateTeamError] = useState('')
+  const [createTeamMessage, setCreateTeamMessage] = useState('')
+  const [isCreatingTeam, setIsCreatingTeam] = useState(false)
 
   function handleLogout() {
     logout()
@@ -54,6 +62,7 @@ function MainDashboard() {
   }, [])
 
   const roleLabel = currentUser?.role || 'member'
+  const canCreateTeam = Boolean(currentUser?.id && currentUser?.region)
 
   function getMemberCount(team) {
     const memberIds = String(team?.memberIds || '')
@@ -72,6 +81,77 @@ function MainDashboard() {
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault()
       openTeamMembers(teamId)
+    }
+  }
+
+  function updateCreateTeamValues(event) {
+    const { name, value } = event.target
+    setCreateTeamValues(currentValues => ({
+      ...currentValues,
+      [name]: value,
+    }))
+  }
+
+  function toggleCreateTeamForm() {
+    setShowCreateTeamForm(currentValue => !currentValue)
+    setCreateTeamError('')
+    setCreateTeamMessage('')
+  }
+
+  async function handleCreateTeam(event) {
+    event.preventDefault()
+
+    const trimmedName = createTeamValues.name.trim()
+    const trimmedDescription = createTeamValues.description.trim()
+
+    if (!trimmedName) {
+      setCreateTeamError('Team name is required.')
+      return
+    }
+
+    if (!trimmedDescription) {
+      setCreateTeamError('Team description is required.')
+      return
+    }
+
+    if (!canCreateTeam) {
+      setCreateTeamError('Your account is missing the ID or region needed to create a team.')
+      return
+    }
+
+    setIsCreatingTeam(true)
+    setCreateTeamError('')
+    setCreateTeamMessage('')
+
+    try {
+      const createdTeam = await createTeam({
+        name: trimmedName,
+        description: trimmedDescription,
+        region: currentUser.region,
+        leaderId: currentUser.id,
+        memberIds: [currentUser.id],
+      })
+
+      if (createdTeam) {
+        setTeams(currentTeams =>
+          [...currentTeams, createdTeam].sort((leftTeam, rightTeam) => {
+            const leftId = Number(leftTeam?.id) || 0
+            const rightId = Number(rightTeam?.id) || 0
+            return leftId - rightId
+          }),
+        )
+      }
+
+      setCreateTeamValues({
+        name: '',
+        description: '',
+      })
+      setCreateTeamMessage('Team created and you were added as the first member.')
+      setShowCreateTeamForm(false)
+    } catch (error) {
+      setCreateTeamError(error.message || 'Unable to create team')
+    } finally {
+      setIsCreatingTeam(false)
     }
   }
 
@@ -142,10 +222,121 @@ function MainDashboard() {
               </p>
             </div>
 
-            <div className='text-sm text-slate-400'>
-              {teamsLoading ? 'Loading teams...' : `${teams.length} teams`}
+            <div className='flex flex-col gap-3 md:items-end'>
+              <button
+                className='rounded-xl bg-cyan-300 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-300'
+                type='button'
+                onClick={toggleCreateTeamForm}
+                disabled={!canCreateTeam || isCreatingTeam}
+              >
+                {showCreateTeamForm ? 'Close Create Team' : 'Create Team'}
+              </button>
+
+              <div className='text-sm text-slate-400'>
+                {teamsLoading ? 'Loading teams...' : `${teams.length} teams`}
+              </div>
             </div>
           </div>
+
+          {!canCreateTeam ? (
+            <div className='mt-6 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100'>
+              Your account needs both an individual ID and a region before it can
+              create a team.
+            </div>
+          ) : null}
+
+          {createTeamMessage ? (
+            <div className='mt-6 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100'>
+              {createTeamMessage}
+            </div>
+          ) : null}
+
+          {showCreateTeamForm ? (
+            <section className='mt-6 rounded-2xl border border-cyan-500/20 bg-slate-950/80 p-6'>
+              <div className='flex flex-col gap-2'>
+                <p className='text-sm font-semibold uppercase tracking-[0.18em] text-cyan-300'>
+                  New Team
+                </p>
+                <h3 className='text-2xl font-bold text-white'>Create a team</h3>
+                <p className='text-sm text-slate-300'>
+                  You will be saved as the team leader and automatically added as
+                  the first member.
+                </p>
+              </div>
+
+              <form className='mt-6 grid gap-4' onSubmit={handleCreateTeam}>
+                <label className='grid gap-2 text-sm text-slate-300'>
+                  Team Name
+                  <input
+                    className='rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-white outline-none transition focus:border-cyan-400'
+                    type='text'
+                    name='name'
+                    value={createTeamValues.name}
+                    onChange={updateCreateTeamValues}
+                    placeholder='North America Platform'
+                    disabled={isCreatingTeam}
+                  />
+                </label>
+
+                <label className='grid gap-2 text-sm text-slate-300'>
+                  Description
+                  <textarea
+                    className='min-h-28 rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-white outline-none transition focus:border-cyan-400'
+                    name='description'
+                    value={createTeamValues.description}
+                    onChange={updateCreateTeamValues}
+                    placeholder='Share what this team focuses on.'
+                    disabled={isCreatingTeam}
+                  />
+                </label>
+
+                <div className='grid gap-4 md:grid-cols-2'>
+                  <article className='rounded-2xl border border-slate-800 bg-slate-900 p-4'>
+                    <p className='text-xs uppercase tracking-[0.18em] text-slate-400'>
+                      Region
+                    </p>
+                    <p className='mt-2 text-sm font-semibold text-white'>
+                      {currentUser?.region || '--'}
+                    </p>
+                  </article>
+
+                  <article className='rounded-2xl border border-slate-800 bg-slate-900 p-4'>
+                    <p className='text-xs uppercase tracking-[0.18em] text-slate-400'>
+                      First Member
+                    </p>
+                    <p className='mt-2 text-sm font-semibold text-white'>
+                      {currentUser?.name || 'Current user'}
+                    </p>
+                  </article>
+                </div>
+
+                {createTeamError ? (
+                  <div className='rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200'>
+                    {createTeamError}
+                  </div>
+                ) : null}
+
+                <div className='flex flex-wrap gap-3'>
+                  <button
+                    className='rounded-xl bg-cyan-300 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-300'
+                    type='submit'
+                    disabled={isCreatingTeam}
+                  >
+                    {isCreatingTeam ? 'Creating Team...' : 'Create Team'}
+                  </button>
+
+                  <button
+                    className='rounded-xl border border-slate-700 px-4 py-3 text-sm font-semibold text-slate-200 transition hover:border-slate-500'
+                    type='button'
+                    onClick={toggleCreateTeamForm}
+                    disabled={isCreatingTeam}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            </section>
+          ) : null}
 
           {teamsError ? (
             <div className='mt-6 rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200'>
@@ -264,11 +455,11 @@ function MainDashboard() {
               <div className='mt-8 grid gap-4 md:grid-cols-2'>
                 <Link
                   className='rounded-2xl border border-slate-700 bg-slate-950 p-6 transition hover:border-cyan-400'
-                  to='/dashboard/team'
+                  to='/dashboard/member'
                 >
-                  <h3 className='text-xl font-semibold'>Team Dashboard</h3>
+                  <h3 className='text-xl font-semibold'>Member Dashboard</h3>
                   <p className='mt-2 text-sm text-slate-300'>
-                    Open the full team dashboard for broader team metrics and
+                    Open the member dashboard for broader team metrics and
                     performance details.
                   </p>
                 </Link>
