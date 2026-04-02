@@ -3,6 +3,7 @@ import LoginPage from './pages/LoginPage'
 import MainDashboard from './pages/MainDashboard'
 import TeamDashboard from './pages/TeamDashboard'
 import IndividualDashboard from './pages/IndividualDashboard'
+import TeamMembersPage from './pages/TeamMembersPage'
 import { useAuth } from './context/authContext'
 import './App.css'
 
@@ -55,6 +56,14 @@ function AppRoutes() {
         element={
           <AuthGate requiresAuth>
             <TeamDashboard />
+          </AuthGate>
+        }
+      />
+      <Route
+        path='/dashboard/team/:teamId'
+        element={
+          <AuthGate requiresAuth>
+            <TeamMembersPage />
           </AuthGate>
         }
       />

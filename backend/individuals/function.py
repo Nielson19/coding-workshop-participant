@@ -1,130 +1,254 @@
-import os
-from typing import Any
-from urllib.parse import quote_plus
+import base64
+import json
+from urllib.parse import parse_qsl
 
-from fastapi import FastAPI, HTTPException, Query
-from mangum import Mangum
-from pymongo import MongoClient
-from pymongo.errors import PyMongoError
+from bson import ObjectId
+from bson.errors import InvalidId
 
-SERVICE_NAME = "individuals"
-COLLECTION_NAME = "individuals"
-
-app = FastAPI(title="Individuals API", version="1.0.0")
-_client: MongoClient | None = None
+from db_setup import get_connection_summary, get_database
 
 
-def is_local_environment() -> bool:
-    return os.getenv("IS_LOCAL", "false").lower() == "true"
+def _method(event):
+    return (
+        event.get("httpMethod")
+        or event.get("requestContext", {}).get("http", {}).get("method")
+        or "GET"
+    ).upper()
 
 
-def get_database_name() -> str:
-    database_name = os.getenv("MONGO_NAME")
-    if database_name:
-        return database_name
+def _request_data(event):
+    payload = {}
+    query_params = event.get("queryStringParameters") or {}
+    if query_params:
+        payload.update(query_params)
+    raw_query_string = event.get("rawQueryString") or ""
+    if raw_query_string:
+        payload.update(dict(parse_qsl(raw_query_string, keep_blank_values=True)))
 
-    app_name = os.getenv("APP_NAME")
-    if app_name:
-        return app_name.replace("-", "_")
+    body = event.get("body")
+    if body:
+        if event.get("isBase64Encoded"):
+            body = base64.b64decode(body).decode("utf-8")
+        parsed = json.loads(body)
+        if not isinstance(parsed, dict):
+            raise ValueError("Request body must be a JSON object")
+        payload.update(parsed)
 
-    return "coding_workshop"
-
-
-def build_mongo_uri(include_credentials: bool) -> str:
-    host = os.getenv("MONGO_HOST", "localhost")
-    port = os.getenv("MONGO_PORT", "27017")
-    database_name = quote_plus(get_database_name())
-    username = os.getenv("MONGO_USER", "")
-    password = os.getenv("MONGO_PASS", "")
-
-    auth = ""
-    if include_credentials and username and password:
-        auth = f"{quote_plus(username)}:{quote_plus(password)}@"
-
-    uri = f"mongodb://{auth}{host}:{port}/{database_name}"
-    options = ["retryWrites=false"]
-
-    if is_local_environment():
-        if include_credentials and username and password:
-            options.append("authSource=admin")
-    else:
-        options.extend(["tls=true", "tlsAllowInvalidCertificates=true"])
-
-    return f"{uri}?{'&'.join(options)}"
+    return payload
 
 
-def get_client() -> MongoClient:
-    global _client
-
-    if _client is not None:
-        return _client
-
-    connection_attempts = [False, True] if is_local_environment() else [True]
-    last_error: Exception | None = None
-
-    for include_credentials in connection_attempts:
-        try:
-            client = MongoClient(
-                build_mongo_uri(include_credentials),
-                serverSelectionTimeoutMS=5000,
-            )
-            client.admin.command("ping")
-            _client = client
-            return client
-        except PyMongoError as exc:
-            last_error = exc
-
-    raise HTTPException(
-        status_code=500,
-        detail=f"MongoDB connection failed: {last_error}",
-    )
-
-
-def serialize_value(value: Any) -> Any:
-    if isinstance(value, dict):
-        return {key: serialize_value(item) for key, item in value.items()}
-    if isinstance(value, list):
-        return [serialize_value(item) for item in value]
-    if isinstance(value, (str, int, float, bool)) or value is None:
-        return value
-    if hasattr(value, "isoformat"):
-        return value.isoformat()
-    return str(value)
-
-
-def fetch_documents(limit: int) -> list[dict[str, Any]]:
-    try:
-        collection = get_client()[get_database_name()][COLLECTION_NAME]
-        documents = list(collection.find().limit(limit))
-        return [serialize_value(document) for document in documents]
-    except PyMongoError as exc:
-        raise HTTPException(status_code=500, detail=f"MongoDB query failed: {exc}") from exc
-
-
-@app.get("/")
-def read_individuals(limit: int = Query(default=20, ge=1, le=100)) -> dict[str, Any]:
-    documents = fetch_documents(limit)
+def _response(status, body):
     return {
-        "service": SERVICE_NAME,
-        "message": "Individuals API is running",
-        "database": {
-            "name": get_database_name(),
-            "host": os.getenv("MONGO_HOST", "localhost"),
-            "port": os.getenv("MONGO_PORT", "27017"),
-            "isLocal": is_local_environment(),
-        },
-        "count": len(documents),
-        "items": documents,
+        "statusCode": status,
+        "headers": {"Content-Type": "application/json"},
+        "body": json.dumps(body, default=str),
     }
 
 
-@app.get("/health")
-def healthcheck() -> dict[str, str]:
-    get_client().admin.command("ping")
-    return {"status": "ok", "service": SERVICE_NAME}
+def _serialize(document):
+    item = dict(document)
+    item["_id"] = str(item["_id"])
+    return item
 
 
-handler = Mangum(app, lifespan="off")
+def _parse_int(value, field_name):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"'{field_name}' must be an integer")
 
-if __name__ == "__main__":
-    print(read_individuals())
+
+def _next_numeric_id(collection):
+    highest = 0
+    for document in collection.find({}, {"id": 1}):
+        value = document.get("id")
+        if isinstance(value, int) and value > highest:
+            highest = value
+    return highest + 1
+
+
+def _parse_member_ids(value):
+    if value in (None, "", []):
+        return []
+    if isinstance(value, list):
+        return [int(item) for item in value]
+    return [int(item.strip()) for item in str(value).split(",") if item.strip()]
+
+
+def _format_member_ids(member_ids):
+    return ",".join(str(member_id) for member_id in member_ids)
+
+
+def _selector_from_body(body):
+    if body.get("_id"):
+        try:
+            return {"_id": ObjectId(body["_id"])}
+        except InvalidId as exc:
+            raise ValueError("Invalid '_id' value") from exc
+    if body.get("id") is not None:
+        return {"id": _parse_int(body.get("id"), "id")}
+    if body.get("email"):
+        return {"email": str(body["email"]).strip()}
+    raise ValueError("Provide one of: '_id', 'id', or 'email'")
+
+
+def _sorted_items(items):
+    return sorted(items, key=lambda item: (item.get("id") is None, item.get("id"), item.get("name", "")))
+
+
+def _build_payload(items=None, message="Individuals API is running", extra=None):
+    if items is None:
+        collection = get_database()["users"]
+        items = [_serialize(document) for document in collection.find({})]
+
+    payload = {
+        "service": "individuals",
+        "message": message,
+        "database": get_connection_summary(),
+        "count": len(items),
+        "items": _sorted_items(items),
+    }
+    if extra:
+        payload.update(extra)
+    return payload
+
+
+def _get_individual(body):
+    collection = get_database()["users"]
+    individual = collection.find_one(_selector_from_body(body))
+    if not individual:
+        return _response(404, {"error": "Individual not found"})
+
+    item = _serialize(individual)
+    payload = _build_payload(
+        items=[item],
+        message="Individual found",
+        extra={"item": item},
+    )
+    return _response(200, payload)
+
+
+def _get_individuals_by_team(body):
+    database = get_database()
+    teams = database["teams"]
+    users = database["users"]
+
+    team_id = _parse_int(body.get("teamId"), "teamId")
+    team = teams.find_one({"id": team_id})
+    if not team:
+        return _response(404, {"error": "Team not found"})
+
+    member_ids = set(_parse_member_ids(team.get("memberIds")))
+    items = [
+        _serialize(document)
+        for document in users.find({})
+        if document.get("id") in member_ids
+    ]
+
+    payload = _build_payload(
+        items=items,
+        message="Individuals for team retrieved",
+        extra={"team": _serialize(team)},
+    )
+    return _response(200, payload)
+
+
+def _create_individual(body):
+    collection = get_database()["users"]
+
+    required_fields = ["name", "email", "password", "role", "region"]
+    missing_fields = [field for field in required_fields if not body.get(field)]
+    if missing_fields:
+        raise ValueError("Missing required fields: " + ", ".join(missing_fields))
+
+    if collection.find_one({"email": body["email"]}):
+        raise ValueError(f"Individual with email '{body['email']}' already exists")
+
+    individual = {
+        "id": _parse_int(body.get("id"), "id") if body.get("id") is not None else _next_numeric_id(collection),
+        "name": str(body["name"]).strip(),
+        "email": str(body["email"]).strip(),
+        "password": str(body["password"]),
+        "role": str(body["role"]).strip(),
+        "region": str(body["region"]).strip(),
+    }
+
+    result = collection.insert_one(individual)
+    individual["_id"] = str(result.inserted_id)
+    return _response(201, {"message": "Individual created", "individual": individual})
+
+
+def _delete_individual(body):
+    database = get_database()
+    users = database["users"]
+    teams = database["teams"]
+
+    selector = _selector_from_body(body)
+    individual = users.find_one(selector)
+    if not individual:
+        return _response(404, {"error": "Individual not found"})
+
+    users.delete_one({"_id": individual["_id"]})
+
+    touched_teams = 0
+    for team in teams.find({}):
+        member_ids = _parse_member_ids(team.get("memberIds"))
+        update_fields = {}
+
+        if individual["id"] in member_ids:
+            member_ids = [member_id for member_id in member_ids if member_id != individual["id"]]
+            update_fields["memberIds"] = _format_member_ids(member_ids)
+
+        if team.get("leaderId") == individual["id"]:
+            update_fields["leaderId"] = None
+
+        if update_fields:
+            teams.update_one({"_id": team["_id"]}, {"$set": update_fields})
+            touched_teams += 1
+
+    return _response(200, {
+        "message": "Individual removed",
+        "individual": _serialize(individual),
+        "affectedTeams": touched_teams,
+    })
+
+
+def _update_individual(body):
+    action = str(body.get("action", "")).strip().lower().replace("-", "_").replace(" ", "_")
+
+    if action in {"remove", "remove_individual", "delete", "delete_individual"}:
+        return _delete_individual(body)
+
+    raise ValueError("Unsupported action. Use one of: remove_individual, delete_individual")
+
+
+def handler(event=None, context=None):
+    event = event or {}
+    method = _method(event)
+
+    try:
+        if method == "GET":
+            request_data = _request_data(event)
+
+            if request_data.get("teamId") is not None:
+                return _get_individuals_by_team(request_data)
+
+            if any(request_data.get(field) not in (None, "") for field in ("_id", "id", "email")):
+                return _get_individual(request_data)
+
+            return _response(200, _build_payload())
+
+        if method == "POST":
+            return _create_individual(_request_data(event))
+
+        if method == "PUT":
+            return _update_individual(_request_data(event))
+
+        if method == "DELETE":
+            return _delete_individual(_request_data(event))
+
+        return _response(405, {"error": f"Unsupported method: {method}"})
+    except ValueError as exc:
+        return _response(400, {"error": str(exc)})
+    except Exception as exc:
+        return _response(500, {"error": str(exc)})

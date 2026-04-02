@@ -9,6 +9,36 @@ function getApiBaseUrl() {
   return baseUrl.replace(/\/$/, '')
 }
 
+function getApiEndpoints() {
+  const rawEndpoints =
+    import.meta.env.VITE_API_ENDPOINTS || import.meta.env.REACT_APP_API_ENDPOINTS
+
+  if (!rawEndpoints) {
+    return {}
+  }
+
+  try {
+    return JSON.parse(rawEndpoints)
+  } catch {
+    return {}
+  }
+}
+
+function getServiceUrl(serviceName) {
+  const baseUrl = getApiBaseUrl()
+
+  if (baseUrl.includes('localhost:3001')) {
+    return `${baseUrl}/api/${serviceName}`
+  }
+
+  const endpoints = getApiEndpoints()
+  if (endpoints[serviceName]) {
+    return String(endpoints[serviceName]).replace(/\/$/, '')
+  }
+
+  return `${baseUrl}/${serviceName}`
+}
+
 function normalizeRole(role) {
   return String(role || '')
     .trim()
@@ -91,7 +121,7 @@ export async function login({ email, password }) {
   }
 
   const response = await fetch(
-    `${getApiBaseUrl()}/individuals?email=${encodeURIComponent(trimmedEmail)}`,
+    `${getServiceUrl('individuals')}?email=${encodeURIComponent(trimmedEmail)}`,
     {
       method: 'GET',
       headers: {
@@ -119,7 +149,7 @@ export async function login({ email, password }) {
 export async function signup(formValues) {
   const payload = buildSignupPayload(formValues)
 
-  const response = await fetch(`${getApiBaseUrl()}/individuals`, {
+  const response = await fetch(getServiceUrl('individuals'), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -158,4 +188,4 @@ export function logout() {
   localStorage.removeItem(AUTH_STORAGE_KEY)
 }
 
-export { AUTH_STORAGE_KEY }
+export { AUTH_STORAGE_KEY, getServiceUrl }

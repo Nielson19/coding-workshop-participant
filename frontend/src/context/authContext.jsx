@@ -1,5 +1,4 @@
 import { createContext, useContext, useEffect, useState } from 'react'
-import toast from 'react-hot-toast'
 import {
   AUTH_STORAGE_KEY,
   getStoredAuthUser,
@@ -34,7 +33,6 @@ export function AuthProvider({ children }) {
     try {
       const authenticatedUser = await loginRequest(credentials)
       setCurrentUser(authenticatedUser)
-      toast.success('Logged in successfully')
       return authenticatedUser
     } finally {
       setIsLoading(false)
@@ -47,7 +45,6 @@ export function AuthProvider({ children }) {
     try {
       const authenticatedUser = await signupRequest(formValues)
       setCurrentUser(authenticatedUser)
-      toast.success('Account created successfully')
       return authenticatedUser
     } finally {
       setIsLoading(false)
@@ -57,7 +54,6 @@ export function AuthProvider({ children }) {
   function logout() {
     logoutRequest()
     setCurrentUser(null)
-    toast.success('Logged out successfully')
   }
 
   const value = {
