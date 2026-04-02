@@ -1,6 +1,22 @@
 import { Link } from 'react-router'
 import CitiLogo from '../assets/Citi-Logo.png'
+import { useAuth } from '../context/authContext'
+import { toast } from 'react-hot-toast'
 function LoginPage() {
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const { login } = useAuth()
+
+  const handleSignIn = () => { 
+    
+      try {
+        // Simulate successful login
+        login({ email, password })
+        toast.success('Logged in successfully')
+      } catch (error) {
+        toast.error('Failed to login')
+      }
+  }
   return (
     <main className='flex min-h-screen items-center justify-center bg-slate-100 px-6 py-12'>
       <section className='w-full max-w-md rounded-2xl bg-white p-8 shadow-lg shadow-slate-200'>
@@ -49,6 +65,7 @@ function LoginPage() {
           </div>
 
           <button
+            onClick={handleSignIn}
             className='w-full rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-700'
             type='submit'
           >

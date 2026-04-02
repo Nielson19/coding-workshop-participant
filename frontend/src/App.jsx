@@ -3,7 +3,9 @@ import LoginPage from './pages/LoginPage'
 import MainDashboard from './pages/MainDashboard'
 import TeamDashboard from './pages/TeamDashboard'
 import IndividualDashboard from './pages/IndividualDashboard'
+import { Toaster } from 'react-hot-toast'
 import './App.css'
+
 
 function AppRoutes() {
   return (
@@ -21,6 +23,7 @@ function AppRoutes() {
 function App() {
   return (
     <BrowserRouter>
+    <Toaster />
       <AppRoutes />
     </BrowserRouter>
   )
