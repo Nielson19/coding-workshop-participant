@@ -3,18 +3,69 @@ import LoginPage from './pages/LoginPage'
 import MainDashboard from './pages/MainDashboard'
 import TeamDashboard from './pages/TeamDashboard'
 import IndividualDashboard from './pages/IndividualDashboard'
-import { Toaster } from 'react-hot-toast'
+import { useAuth } from './context/authContext'
 import './App.css'
 
+function AuthGate({ children, requiresAuth }) {
+  const { isAuthenticated, isReady } = useAuth()
+
+  if (!isReady) {
+    return (
+      <main className='flex min-h-screen items-center justify-center bg-slate-100 px-6 py-12'>
+        <div className='rounded-2xl bg-white px-6 py-4 text-sm font-semibold text-slate-600 shadow-sm'>
+          Loading session...
+        </div>
+      </main>
+    )
+  }
+
+  if (requiresAuth && !isAuthenticated) {
+    return <Navigate to='/login' replace />
+  }
+
+  if (!requiresAuth && isAuthenticated) {
+    return <Navigate to='/dashboard' replace />
+  }
+
+  return children
+}
 
 function AppRoutes() {
   return (
     <Routes>
       <Route path='/' element={<Navigate to='/login' replace />} />
-      <Route path='/login' element={<LoginPage />} />
-      <Route path='/dashboard' element={<MainDashboard />} />
-      <Route path='/dashboard/team' element={<TeamDashboard />} />
-      <Route path='/dashboard/individual' element={<IndividualDashboard />} />
+      <Route
+        path='/login'
+        element={
+          <AuthGate requiresAuth={false}>
+            <LoginPage />
+          </AuthGate>
+        }
+      />
+      <Route
+        path='/dashboard'
+        element={
+          <AuthGate requiresAuth>
+            <MainDashboard />
+          </AuthGate>
+        }
+      />
+      <Route
+        path='/dashboard/team'
+        element={
+          <AuthGate requiresAuth>
+            <TeamDashboard />
+          </AuthGate>
+        }
+      />
+      <Route
+        path='/dashboard/individual'
+        element={
+          <AuthGate requiresAuth>
+            <IndividualDashboard />
+          </AuthGate>
+        }
+      />
       <Route path='*' element={<Navigate to='/login' replace />} />
     </Routes>
   )
@@ -23,7 +74,6 @@ function AppRoutes() {
 function App() {
   return (
     <BrowserRouter>
-    <Toaster />
       <AppRoutes />
     </BrowserRouter>
   )
